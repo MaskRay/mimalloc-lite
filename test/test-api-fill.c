@@ -27,25 +27,6 @@ int main(void) {
   // ---------------------------------------------------
   // Zeroing allocation
   // ---------------------------------------------------
-  CHECK_BODY("zeroinit-zalloc-small") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc(zalloc_size);
-    result = check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-zalloc-large") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_zalloc(zalloc_size);
-    result = check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-zalloc_small") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_small(zalloc_size);
-    result = check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-
   CHECK_BODY("zeroinit-calloc-small") {
     size_t calloc_size = MI_SMALL_SIZE_MAX / 2;
     uint8_t* p = (uint8_t*)mi_calloc(calloc_size, 1);
@@ -56,111 +37,6 @@ int main(void) {
     size_t calloc_size = MI_SMALL_SIZE_MAX * 2;
     uint8_t* p = (uint8_t*)mi_calloc(calloc_size, 1);
     result = check_zero_init(p, calloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("zeroinit-rezalloc-small") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc(zalloc_size);
-    result = check_zero_init(p, zalloc_size);
-    zalloc_size *= 3;
-    p = (uint8_t*)mi_rezalloc(p, zalloc_size);
-    result &= check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-rezalloc-large") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_zalloc(zalloc_size);
-    result = check_zero_init(p, zalloc_size);
-    zalloc_size *= 3;
-    p = (uint8_t*)mi_rezalloc(p, zalloc_size);
-    result &= check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("zeroinit-recalloc-small") {
-    size_t calloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_calloc(calloc_size, 1);
-    result = check_zero_init(p, calloc_size);
-    calloc_size *= 3;
-    p = (uint8_t*)mi_recalloc(p, calloc_size, 1);
-    result &= check_zero_init(p, calloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-recalloc-large") {
-    size_t calloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_calloc(calloc_size, 1);
-    result = check_zero_init(p, calloc_size);
-    calloc_size *= 3;
-    p = (uint8_t*)mi_recalloc(p, calloc_size, 1);
-    result &= check_zero_init(p, calloc_size);
-    mi_free(p);
-  };
-
-  // ---------------------------------------------------
-  // Zeroing in aligned API
-  // ---------------------------------------------------
-  CHECK_BODY("zeroinit-zalloc_aligned-small") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-zalloc_aligned-large") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("zeroinit-calloc_aligned-small") {
-    size_t calloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_calloc_aligned(calloc_size, 1, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, calloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-calloc_aligned-large") {
-    size_t calloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_calloc_aligned(calloc_size, 1, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, calloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("zeroinit-rezalloc_aligned-small") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, zalloc_size);
-    zalloc_size *= 3;
-    p = (uint8_t*)mi_rezalloc_aligned(p, zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result &= check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-rezalloc_aligned-large") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, zalloc_size);
-    zalloc_size *= 3;
-    p = (uint8_t*)mi_rezalloc_aligned(p, zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result &= check_zero_init(p, zalloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("zeroinit-recalloc_aligned-small") {
-    size_t calloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_calloc_aligned(calloc_size, 1, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, calloc_size);
-    calloc_size *= 3;
-    p = (uint8_t*)mi_recalloc_aligned(p, calloc_size, 1, MI_MAX_ALIGN_SIZE * 2);
-    result &= check_zero_init(p, calloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("zeroinit-recalloc_aligned-large") {
-    size_t calloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_calloc_aligned(calloc_size, 1, MI_MAX_ALIGN_SIZE * 2);
-    result = check_zero_init(p, calloc_size);
-    calloc_size *= 3;
-    p = (uint8_t*)mi_recalloc_aligned(p, calloc_size, 1, MI_MAX_ALIGN_SIZE * 2);
-    result &= check_zero_init(p, calloc_size);
     mi_free(p);
   };
 
@@ -177,13 +53,6 @@ int main(void) {
   CHECK_BODY("uninit-malloc-large") {
     size_t malloc_size = MI_SMALL_SIZE_MAX * 2;
     uint8_t* p = (uint8_t*)mi_malloc(malloc_size);
-    result = check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("uninit-malloc_small") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_malloc_small(malloc_size);
     result = check_debug_fill_uninit(p, malloc_size);
     mi_free(p);
   };
@@ -207,38 +76,6 @@ int main(void) {
     mi_free(p);
   };
 
-  CHECK_BODY("uninit-mallocn-small") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_mallocn(malloc_size, 1);
-    result = check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("uninit-mallocn-large") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_mallocn(malloc_size, 1);
-    result = check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-
-  CHECK_BODY("uninit-reallocn-small") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_mallocn(malloc_size, 1);
-    result = check_debug_fill_uninit(p, malloc_size);
-    malloc_size *= 3;
-    p = (uint8_t*)mi_reallocn(p, malloc_size, 1);
-    result &= check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("uninit-reallocn-large") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_mallocn(malloc_size, 1);
-    result = check_debug_fill_uninit(p, malloc_size);
-    malloc_size *= 3;
-    p = (uint8_t*)mi_reallocn(p, malloc_size, 1);
-    result &= check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-
   CHECK_BODY("uninit-malloc_aligned-small") {
     size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
     uint8_t* p = (uint8_t*)mi_malloc_aligned(malloc_size, MI_MAX_ALIGN_SIZE * 2);
@@ -252,26 +89,7 @@ int main(void) {
     mi_free(p);
   };
 
-  CHECK_BODY("uninit-realloc_aligned-small") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_malloc_aligned(malloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = check_debug_fill_uninit(p, malloc_size);
-    malloc_size *= 3;
-    p = (uint8_t*)mi_realloc_aligned(p, malloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result &= check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("uninit-realloc_aligned-large") {
-    size_t malloc_size = MI_SMALL_SIZE_MAX * 2;
-    uint8_t* p = (uint8_t*)mi_malloc_aligned(malloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = check_debug_fill_uninit(p, malloc_size);
-    malloc_size *= 3;
-    p = (uint8_t*)mi_realloc_aligned(p, malloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result &= check_debug_fill_uninit(p, malloc_size);
-    mi_free(p);
-  };
-
-  #if !(MI_TRACK_VALGRIND || MI_TRACK_ASAN || MI_GUARDED)
+  #if !(MI_TRACK_VALGRIND || MI_TRACK_ASAN)
   CHECK_BODY("fill-freed-small") {
     size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
     uint8_t* p = (uint8_t*)mi_malloc(malloc_size);

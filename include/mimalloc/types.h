@@ -52,16 +52,6 @@ terms of the MIT license. A copy of the license can be found in the file
 // Define MI_STAT as 1 to maintain statistics; set it to 2 to have detailed statistics (but costs some performance).
 // #define MI_STAT 1
 
-// Define MI_SECURE to enable security mitigations
-// #define MI_SECURE 1  // guard page around metadata
-// #define MI_SECURE 2  // guard page around each mimalloc page
-// #define MI_SECURE 3  // encode free lists (detect corrupted free list (buffer overflow), and invalid pointer free)
-// #define MI_SECURE 4  // checks for double free. (may be more expensive)
-
-#if !defined(MI_SECURE)
-#define MI_SECURE 0
-#endif
-
 // Define MI_DEBUG for debug mode
 // #define MI_DEBUG 1  // basic assertion checks and statistics, check double free, corrupted free list, and invalid pointer free.
 // #define MI_DEBUG 2  // + internal assertion checks
@@ -76,28 +66,14 @@ terms of the MIT license. A copy of the license can be found in the file
 
 // Use guard pages behind objects of a certain size (set by the MIMALLOC_DEBUG_GUARDED_MIN/MAX options)
 // Padding should be disabled when using guard pages
-// #define MI_GUARDED 1
-#if defined(MI_GUARDED)
 #define MI_PADDING  0
-#endif
 
 // Reserve extra padding at the end of each block to be more resilient against heap block overflows.
 // The padding can detect buffer overflow on free.
-#if !defined(MI_PADDING) && (MI_SECURE>=3 || MI_DEBUG>=1 || (MI_TRACK_VALGRIND || MI_TRACK_ASAN || MI_TRACK_ETW))
-#define MI_PADDING  1
-#endif
+// Simplified: MI_PADDING is always 0
 
 // Check padding bytes; allows byte-precise buffer overflow detection
-#if !defined(MI_PADDING_CHECK) && MI_PADDING && (MI_SECURE>=3 || MI_DEBUG>=1)
-#define MI_PADDING_CHECK 1
-#endif
-
-
-// Encoded free lists allow detection of corrupted free lists
-// and can detect buffer overflows, modify after free, and double `free`s.
-#if (MI_SECURE>=3 || MI_DEBUG>=1)
-#define MI_ENCODE_FREELIST  1
-#endif
+#define MI_PADDING_CHECK 0
 
 
 // We used to abandon huge pages in order to eagerly deallocate it if freed from another thread.
@@ -247,12 +223,7 @@ typedef struct mi_block_s {
   mi_encoded_t next;
 } mi_block_t;
 
-#if MI_GUARDED
-// we always align guarded pointers in a block at an offset
-// the block `next` field is then used as a tag to distinguish regular offset aligned blocks from guarded ones
-#define MI_BLOCK_TAG_ALIGNED   ((mi_encoded_t)(0))
-#define MI_BLOCK_TAG_GUARDED   (~MI_BLOCK_TAG_ALIGNED)
-#endif
+
 
 
 // The delayed flags are used for efficient multi-threaded free-ing
@@ -340,10 +311,6 @@ typedef struct mi_page_s {
                                            // padding
   size_t                block_size;        // size available in each block (always `>0`)
   uint8_t*              page_start;        // start of the page area containing the blocks
-
-  #if (MI_ENCODE_FREELIST || MI_PADDING)
-  uintptr_t             keys[2];           // two random keys to encode the free lists (see `_mi_block_next`) or padding canary
-  #endif
 
   _Atomic(mi_thread_free_t) xthread_free;  // list of deferred free blocks freed by other threads
   _Atomic(uintptr_t)        xheap;
@@ -535,19 +502,7 @@ typedef struct mi_random_cxt_s {
 
 
 // In debug mode there is a padding structure at the end of the blocks to check for buffer overflows
-#if (MI_PADDING)
-typedef struct mi_padding_s {
-  uint32_t canary; // encoded block value to check validity of the padding (in case of overflow)
-  uint32_t delta;  // padding bytes before the block. (mi_usable_size(p) - delta == exact allocated bytes)
-} mi_padding_t;
-#define MI_PADDING_SIZE   (sizeof(mi_padding_t))
-#define MI_PADDING_WSIZE  ((MI_PADDING_SIZE + MI_INTPTR_SIZE - 1) / MI_INTPTR_SIZE)
-#else
-#define MI_PADDING_SIZE   0
-#define MI_PADDING_WSIZE  0
-#endif
-
-#define MI_PAGES_DIRECT   (MI_SMALL_WSIZE_MAX + MI_PADDING_WSIZE + 1)
+#define MI_PAGES_DIRECT   (MI_SMALL_WSIZE_MAX + 1)
 
 
 // A heap owns a set of pages.
@@ -567,12 +522,7 @@ struct mi_heap_s {
   mi_heap_t*            next;                                // list of heaps per thread
   bool                  no_reclaim;                          // `true` if this heap should not reclaim abandoned pages
   uint8_t               tag;                                 // custom tag, can be used for separating heaps based on the object types
-  #if MI_GUARDED
-  size_t                guarded_size_min;                    // minimal size for guarded objects
-  size_t                guarded_size_max;                    // maximal size for guarded objects
-  size_t                guarded_sample_rate;                 // sample rate (set to 0 to disable guarded pages)
-  size_t                guarded_sample_count;                // current sample count (counting down to 0)
-  #endif
+
   mi_page_t*            pages_free_direct[MI_PAGES_DIRECT];  // optimize: array where every entry points a page with possibly free blocks in the corresponding queue for that size.
   mi_page_queue_t       pages[MI_BIN_FULL + 1];              // queue of pages for each size class (or "bin")
 };
@@ -641,9 +591,6 @@ struct mi_tld_s {
 #endif
 #if !defined(MI_DEBUG_FREED)
 #define MI_DEBUG_FREED      (0xDF)
-#endif
-#if !defined(MI_DEBUG_PADDING)
-#define MI_DEBUG_PADDING    (0xDE)
 #endif
 
 

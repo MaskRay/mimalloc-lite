@@ -119,17 +119,10 @@ void* _mi_os_get_aligned_hint(size_t try_alignment, size_t size)
   if (mi_os_mem_config.virtual_address_bits < 46) return NULL;  // < 64TiB virtual address space
   size = _mi_align_up(size, MI_SEGMENT_SIZE);
   if (size > 1*MI_GiB) return NULL;  // guarantee the chance of fixed valid address is at most 1/(MI_HINT_AREA / 1<<30) = 1/4096.
-  #if (MI_SECURE>0)
-  size += MI_SEGMENT_SIZE;        // put in `MI_SEGMENT_SIZE` virtual gaps between hinted blocks; this splits VLA's but increases guarded areas.
-  #endif
 
   uintptr_t hint = mi_atomic_add_acq_rel(&aligned_base, size);
   if (hint == 0 || hint > MI_HINT_MAX) {   // wrap or initialize
     uintptr_t init = MI_HINT_BASE;
-    #if (MI_SECURE>0 || MI_DEBUG==0)       // security: randomize start of aligned allocations unless in debug mode
-    uintptr_t r = _mi_heap_random_next(mi_prim_get_default_heap());
-    init = init + ((MI_SEGMENT_SIZE * ((r>>17) & 0xFFFFF)) % MI_HINT_AREA);  // (randomly 20 bits)*4MiB == 0 to 4TiB
-    #endif
     uintptr_t expected = hint + size;
     mi_atomic_cas_strong_acq_rel(&aligned_base, &expected, init);
     hint = mi_atomic_add_acq_rel(&aligned_base, size); // this may still give 0 or > MI_HINT_MAX but that is ok, it is a hint after all
@@ -360,7 +353,7 @@ void* _mi_os_alloc_aligned(size_t size, size_t alignment, bool commit, bool allo
 }
 
 
-mi_decl_nodiscard static void* mi_os_ensure_zero(void* p, size_t size, mi_memid_t* memid) {
+static void* mi_os_ensure_zero(void* p, size_t size, mi_memid_t* memid) {
   if (p==NULL || size==0) return p;
   // ensure committed
   if (!memid->initially_committed) {
@@ -465,7 +458,6 @@ bool _mi_os_commit_ex(void* addr, size_t size, bool* is_zero, size_t stat_size) 
   }
   if (os_is_zero && is_zero != NULL) {
     *is_zero = true;
-    mi_assert_expensive(mi_mem_is_zero(start, csize));
   }
   // note: the following seems required for asan (otherwise `mimalloc-test-stress` fails)
   #ifdef MI_TRACK_ASAN
@@ -516,7 +508,7 @@ bool _mi_os_reset(void* addr, size_t size) {
   mi_os_stat_increase(reset, csize);
   mi_os_stat_counter_increase(reset_calls, 1);
 
-  #if (MI_DEBUG>1) && !MI_SECURE && !MI_TRACK_ENABLED // && !MI_TSAN
+  #if (MI_DEBUG>1) && !MI_TRACK_ENABLED // && !MI_TSAN
   memset(start, 0, csize); // pretend it is eagerly reset
   #endif
 
@@ -620,7 +612,7 @@ static uint8_t* mi_os_claim_huge_pages(size_t pages, size_t* total_size) {
     if (start == 0) {
       // Initialize the start address after the 32TiB area
       start = ((uintptr_t)32 << 40);  // 32TiB virtual start address
-    #if (MI_SECURE>0 || MI_DEBUG==0)      // security: randomize start of huge pages unless in debug mode
+    #if (MI_DEBUG==0)      // security: randomize start of huge pages unless in debug mode
       uintptr_t r = _mi_heap_random_next(mi_prim_get_default_heap());
       start = start + ((uintptr_t)MI_HUGE_OS_PAGE_SIZE * ((r>>17) & 0x0FFF));  // (randomly 12bits)*1GiB == between 0 to 4TiB
     #endif

@@ -29,56 +29,16 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #define mi_decl_cache_align     mi_decl_align(64)
 
-#if defined(_MSC_VER)
-#pragma warning(disable:4127)   // suppress constant conditional warning (due to MI_SECURE paths)
-#pragma warning(disable:26812)  // unscoped enum warning
-#define mi_decl_noinline        __declspec(noinline)
-#define mi_decl_thread          __declspec(thread)
-#define mi_decl_align(a)        __declspec(align(a))
-#define mi_decl_noreturn        __declspec(noreturn)
-#define mi_decl_weak
-#define mi_decl_hidden
-#define mi_decl_cold
-#elif (defined(__GNUC__) && (__GNUC__ >= 3)) || defined(__clang__) // includes clang and icc
 #define mi_decl_noinline        __attribute__((noinline))
 #define mi_decl_thread          __thread
 #define mi_decl_align(a)        __attribute__((aligned(a)))
 #define mi_decl_noreturn        __attribute__((noreturn))
 #define mi_decl_weak            __attribute__((weak))
 #define mi_decl_hidden          __attribute__((visibility("hidden")))
-#if (__GNUC__ >= 4) || defined(__clang__)
 #define mi_decl_cold            __attribute__((cold))
-#else
-#define mi_decl_cold
-#endif
-#elif __cplusplus >= 201103L    // c++11
-#define mi_decl_noinline
-#define mi_decl_thread          thread_local
-#define mi_decl_align(a)        alignas(a)
-#define mi_decl_noreturn        [[noreturn]]
-#define mi_decl_weak
-#define mi_decl_hidden
-#define mi_decl_cold
-#else
-#define mi_decl_noinline
-#define mi_decl_thread          __thread        // hope for the best :-)
-#define mi_decl_align(a)
-#define mi_decl_noreturn
-#define mi_decl_weak
-#define mi_decl_hidden
-#define mi_decl_cold
-#endif
 
-#if defined(__GNUC__) || defined(__clang__)
 #define mi_unlikely(x)     (__builtin_expect(!!(x),false))
 #define mi_likely(x)       (__builtin_expect(!!(x),true))
-#elif (defined(__cplusplus) && (__cplusplus >= 202002L)) || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
-#define mi_unlikely(x)     (x) [[unlikely]]
-#define mi_likely(x)       (x) [[likely]]
-#else
-#define mi_unlikely(x)     (x)
-#define mi_likely(x)       (x)
-#endif
 
 #ifndef __has_builtin
 #define __has_builtin(x)    0
@@ -90,9 +50,6 @@ terms of the MIT license. A copy of the license can be found in the file
 #define mi_decl_externc
 #endif
 
-#if defined(__EMSCRIPTEN__) && !defined(__wasi__)
-#define __wasi__
-#endif
 
 
 // --------------------------------------------------------------------------
@@ -136,7 +93,7 @@ static inline uintptr_t _mi_random_shuffle(uintptr_t x);
 extern mi_decl_hidden mi_decl_cache_align mi_stats_t       _mi_stats_main;
 extern mi_decl_hidden mi_decl_cache_align const mi_page_t  _mi_page_empty;
 void        _mi_auto_process_init(void);
-void mi_cdecl _mi_auto_process_done(void) mi_attr_noexcept;
+void        _mi_auto_process_done(void) mi_attr_noexcept;
 bool        _mi_is_redirected(void);
 bool        _mi_allocator_init(const char** message);
 void        _mi_allocator_done(void);
@@ -282,7 +239,6 @@ mi_msecs_t  _mi_clock_start(void);
 
 // "alloc.c"
 void*       _mi_page_malloc_zero(mi_heap_t* heap, mi_page_t* page, size_t size, bool zero) mi_attr_noexcept;  // called from `_mi_malloc_generic`
-void*       _mi_page_malloc(mi_heap_t* heap, mi_page_t* page, size_t size) mi_attr_noexcept;                  // called from `_mi_heap_malloc_aligned`
 void*       _mi_page_malloc_zeroed(mi_heap_t* heap, mi_page_t* page, size_t size) mi_attr_noexcept;           // called from `_mi_heap_malloc_aligned`
 void*       _mi_heap_malloc_zero(mi_heap_t* heap, size_t size, bool zero) mi_attr_noexcept;
 void*       _mi_heap_malloc_zero_ex(mi_heap_t* heap, size_t size, bool zero, size_t huge_alignment) mi_attr_noexcept;     // called from `_mi_heap_malloc_aligned`
@@ -290,7 +246,6 @@ void*       _mi_heap_realloc_zero(mi_heap_t* heap, void* p, size_t newsize, bool
 mi_block_t* _mi_page_ptr_unalign(const mi_page_t* page, const void* p);
 bool        _mi_free_delayed_block(mi_block_t* block);
 void        _mi_free_generic(mi_segment_t* segment, mi_page_t* page, bool is_local, void* p) mi_attr_noexcept;  // for runtime integration
-void        _mi_padding_shrink(const mi_page_t* page, const mi_block_t* block, const size_t min_size);
 
 #if MI_DEBUG>1
 bool        _mi_page_is_valid(mi_page_t* page);
@@ -338,13 +293,6 @@ mi_decl_noreturn mi_decl_cold void _mi_assert_fail(const char* assertion, const 
 #else
 #define mi_assert_internal(x)
 #endif
-
-#if (MI_DEBUG>2)
-#define mi_assert_expensive   mi_assert
-#else
-#define mi_assert_expensive(x)
-#endif
-
 
 
 /* -----------------------------------------------------------
@@ -447,36 +395,13 @@ static inline size_t _mi_wsize_from_size(size_t size) {
 }
 
 // Overflow detecting multiply
-#if __has_builtin(__builtin_umul_overflow) || (defined(__GNUC__) && (__GNUC__ >= 5))
-#include <limits.h>      // UINT_MAX, ULONG_MAX
-#if defined(_CLOCK_T)    // for Illumos
-#undef _CLOCK_T
-#endif
 static inline bool mi_mul_overflow(size_t count, size_t size, size_t* total) {
-  #if (SIZE_MAX == ULONG_MAX)
-    return __builtin_umull_overflow(count, size, (unsigned long *)total);
-  #elif (SIZE_MAX == UINT_MAX)
-    return __builtin_umul_overflow(count, size, (unsigned int *)total);
-  #else
-    return __builtin_umulll_overflow(count, size, (unsigned long long *)total);
-  #endif
+  return __builtin_umull_overflow(count, size, total);
 }
-#else /* __builtin_umul_overflow is unavailable */
-static inline bool mi_mul_overflow(size_t count, size_t size, size_t* total) {
-  #define MI_MUL_COULD_OVERFLOW ((size_t)1 << (4*sizeof(size_t)))  // sqrt(SIZE_MAX)
-  *total = count * size;
-  // note: gcc/clang optimize this to directly check the overflow flag
-  return ((size >= MI_MUL_COULD_OVERFLOW || count >= MI_MUL_COULD_OVERFLOW) && size > 0 && (SIZE_MAX / size) < count);
-}
-#endif
 
 // Safe multiply `count*size` into `total`; return `true` on overflow.
 static inline bool mi_count_size_overflow(size_t count, size_t size, size_t* total) {
-  if (count==1) {  // quick check for the case where count is one (common for C++ allocators)
-    *total = size;
-    return false;
-  }
-  else if mi_unlikely(mi_mul_overflow(count, size, total)) {
+  if mi_unlikely(mi_mul_overflow(count, size, total)) {
     #if MI_DEBUG > 0
     _mi_error_message(EOVERFLOW, "allocation request is too large (%zu * %zu bytes)\n", count, size);
     #endif
@@ -513,7 +438,7 @@ static inline uintptr_t _mi_ptr_cookie(const void* p) {
 ----------------------------------------------------------- */
 
 static inline mi_page_t* _mi_heap_get_free_small_page(mi_heap_t* heap, size_t size) {
-  mi_assert_internal(size <= (MI_SMALL_SIZE_MAX + MI_PADDING_SIZE));
+  mi_assert_internal(size <= MI_SMALL_SIZE_MAX);
   const size_t idx = _mi_wsize_from_size(size);
   mi_assert_internal(idx < MI_PAGES_DIRECT);
   return heap->pages_free_direct[idx];
@@ -576,7 +501,6 @@ static inline mi_page_t* _mi_segment_page_of(const mi_segment_t* segment, const 
 // Quick page start for initialized pages
 static inline uint8_t* mi_page_start(const mi_page_t* page) {
   mi_assert_internal(page->page_start != NULL);
-  mi_assert_expensive(_mi_segment_page_start(_mi_page_segment(page),page,NULL) == page->page_start);
   return page->page_start;
 }
 
@@ -601,7 +525,7 @@ static inline bool mi_page_is_huge(const mi_page_t* page) {
 // Get the usable block size of a page without fixed padding.
 // This may still include internal padding due to alignment and rounding up size classes.
 static inline size_t mi_page_usable_block_size(const mi_page_t* page) {
-  return mi_page_block_size(page) - MI_PADDING_SIZE;
+  return mi_page_block_size(page);
 }
 
 // size of a segment
@@ -704,35 +628,6 @@ static inline void mi_page_set_has_aligned(mi_page_t* page, bool has_aligned) {
 /* -------------------------------------------------------------------
   Guarded objects
 ------------------------------------------------------------------- */
-#if MI_GUARDED
-static inline bool mi_block_ptr_is_guarded(const mi_block_t* block, const void* p) {
-  const ptrdiff_t offset = (uint8_t*)p - (uint8_t*)block;
-  return (offset >= (ptrdiff_t)(sizeof(mi_block_t)) && block->next == MI_BLOCK_TAG_GUARDED);
-}
-
-static inline bool mi_heap_malloc_use_guarded(mi_heap_t* heap, size_t size) {
-  // this code is written to result in fast assembly as it is on the hot path for allocation
-  const size_t count = heap->guarded_sample_count - 1;  // if the rate was 0, this will underflow and count for a long time..
-  if mi_likely(count != 0) {
-    // no sample
-    heap->guarded_sample_count = count;
-    return false;
-  }
-  else if (size >= heap->guarded_size_min && size <= heap->guarded_size_max) {
-    // use guarded allocation
-    heap->guarded_sample_count = heap->guarded_sample_rate;  // reset
-    return (heap->guarded_sample_rate != 0);
-  }
-  else {
-    // failed size criteria, rewind count (but don't write to an empty heap)
-    if (heap->guarded_sample_rate != 0) { heap->guarded_sample_count = 1; }
-    return false;
-  }
-}
-
-mi_decl_restrict void* _mi_heap_malloc_guarded(mi_heap_t* heap, size_t size, bool zero) mi_attr_noexcept;
-
-#endif
 
 
 /* -------------------------------------------------------------------
@@ -760,10 +655,6 @@ We also pass a separate `null` value to be used as `NULL` or otherwise
 `(k2<<<k1)+k1` would appear (too) often as a sentinel value.
 ------------------------------------------------------------------- */
 
-static inline bool mi_is_in_same_segment(const void* p, const void* q) {
-  return (_mi_ptr_segment(p) == _mi_ptr_segment(q));
-}
-
 static inline bool mi_is_in_same_page(const void* p, const void* q) {
   mi_segment_t* segment = _mi_ptr_segment(p);
   if (_mi_ptr_segment(q) != segment) return false;
@@ -774,82 +665,28 @@ static inline bool mi_is_in_same_page(const void* p, const void* q) {
   return (start <= (uint8_t*)q && (uint8_t*)q < start + psize);
 }
 
-static inline uintptr_t mi_rotl(uintptr_t x, uintptr_t shift) {
-  shift %= MI_INTPTR_BITS;
-  return (shift==0 ? x : ((x << shift) | (x >> (MI_INTPTR_BITS - shift))));
-}
-static inline uintptr_t mi_rotr(uintptr_t x, uintptr_t shift) {
-  shift %= MI_INTPTR_BITS;
-  return (shift==0 ? x : ((x >> shift) | (x << (MI_INTPTR_BITS - shift))));
-}
-
-static inline void* mi_ptr_decode(const void* null, const mi_encoded_t x, const uintptr_t* keys) {
-  void* p = (void*)(mi_rotr(x - keys[0], keys[0]) ^ keys[1]);
-  return (p==null ? NULL : p);
-}
-
-static inline mi_encoded_t mi_ptr_encode(const void* null, const void* p, const uintptr_t* keys) {
-  uintptr_t x = (uintptr_t)(p==NULL ? null : p);
-  return mi_rotl(x ^ keys[1], keys[0]) + keys[0];
-}
-
-static inline uint32_t mi_ptr_encode_canary(const void* null, const void* p, const uintptr_t* keys) {
-  const uint32_t x = (uint32_t)(mi_ptr_encode(null,p,keys));
-  // make the lowest byte 0 to prevent spurious read overflows which could be a security issue (issue #951)
-  #ifdef MI_BIG_ENDIAN
-  return (x & 0x00FFFFFF);
-  #else
-  return (x & 0xFFFFFF00);
-  #endif
-}
-
 static inline mi_block_t* mi_block_nextx( const void* null, const mi_block_t* block, const uintptr_t* keys ) {
   mi_track_mem_defined(block,sizeof(mi_block_t));
   mi_block_t* next;
-  #ifdef MI_ENCODE_FREELIST
-  next = (mi_block_t*)mi_ptr_decode(null, block->next, keys);
-  #else
   MI_UNUSED(keys); MI_UNUSED(null);
   next = (mi_block_t*)block->next;
-  #endif
   mi_track_mem_noaccess(block,sizeof(mi_block_t));
   return next;
 }
 
 static inline void mi_block_set_nextx(const void* null, mi_block_t* block, const mi_block_t* next, const uintptr_t* keys) {
   mi_track_mem_undefined(block,sizeof(mi_block_t));
-  #ifdef MI_ENCODE_FREELIST
-  block->next = mi_ptr_encode(null, next, keys);
-  #else
   MI_UNUSED(keys); MI_UNUSED(null);
   block->next = (mi_encoded_t)next;
-  #endif
   mi_track_mem_noaccess(block,sizeof(mi_block_t));
 }
 
 static inline mi_block_t* mi_block_next(const mi_page_t* page, const mi_block_t* block) {
-  #ifdef MI_ENCODE_FREELIST
-  mi_block_t* next = mi_block_nextx(page,block,page->keys);
-  // check for free list corruption: is `next` at least in the same page?
-  // TODO: check if `next` is `page->block_size` aligned?
-  if mi_unlikely(next!=NULL && !mi_is_in_same_page(block, next)) {
-    _mi_error_message(EFAULT, "corrupted free list entry of size %zub at %p: value 0x%zx\n", mi_page_block_size(page), block, (uintptr_t)next);
-    next = NULL;
-  }
-  return next;
-  #else
-  MI_UNUSED(page);
   return mi_block_nextx(page,block,NULL);
-  #endif
 }
 
 static inline void mi_block_set_next(const mi_page_t* page, mi_block_t* block, const mi_block_t* next) {
-  #ifdef MI_ENCODE_FREELIST
-  mi_block_set_nextx(page,block,next, page->keys);
-  #else
-  MI_UNUSED(page);
   mi_block_set_nextx(page,block,next,NULL);
-  #endif
 }
 
 
@@ -953,182 +790,41 @@ static inline uintptr_t _mi_random_shuffle(uintptr_t x) {
 // Count bits: trailing or leading zeros (with MI_INTPTR_BITS on all zero)
 // -----------------------------------------------------------------------
 
-#if defined(__GNUC__)
-
 #include <limits.h>       // LONG_MAX
 #define MI_HAVE_FAST_BITSCAN
 static inline size_t mi_clz(size_t x) {
   if (x==0) return MI_SIZE_BITS;
-  #if (SIZE_MAX == ULONG_MAX)
-    return __builtin_clzl(x);
-  #else
-    return __builtin_clzll(x);
-  #endif
+  return __builtin_clzl(x);
 }
 static inline size_t mi_ctz(size_t x) {
   if (x==0) return MI_SIZE_BITS;
-  #if (SIZE_MAX == ULONG_MAX)
-    return __builtin_ctzl(x);
-  #else
-    return __builtin_ctzll(x);
-  #endif
+  return __builtin_ctzl(x);
 }
-
-#elif defined(_MSC_VER)
-
-#include <limits.h>       // LONG_MAX
-#include <intrin.h>       // BitScanReverse64
-#define MI_HAVE_FAST_BITSCAN
-static inline size_t mi_clz(size_t x) {
-  if (x==0) return MI_SIZE_BITS;
-  unsigned long idx;
-  #if (SIZE_MAX == ULONG_MAX)
-    _BitScanReverse(&idx, x);
-  #else
-    _BitScanReverse64(&idx, x);
-  #endif
-  return ((MI_SIZE_BITS - 1) - (size_t)idx);
-}
-static inline size_t mi_ctz(size_t x) {
-  if (x==0) return MI_SIZE_BITS;
-  unsigned long idx;
-  #if (SIZE_MAX == ULONG_MAX)
-    _BitScanForward(&idx, x);
-  #else
-    _BitScanForward64(&idx, x);
-  #endif
-  return (size_t)idx;
-}
-
-#else
-
-static inline size_t mi_ctz_generic32(uint32_t x) {
-  // de Bruijn multiplication, see <http://supertech.csail.mit.edu/papers/debruijn.pdf>
-  static const uint8_t debruijn[32] = {
-    0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
-    31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
-  };
-  if (x==0) return 32;
-  return debruijn[(uint32_t)((x & -(int32_t)x) * (uint32_t)(0x077CB531U)) >> 27];
-}
-
-static inline size_t mi_clz_generic32(uint32_t x) {
-  // de Bruijn multiplication, see <http://supertech.csail.mit.edu/papers/debruijn.pdf>
-  static const uint8_t debruijn[32] = {
-    31, 22, 30, 21, 18, 10, 29, 2, 20, 17, 15, 13, 9, 6, 28, 1,
-    23, 19, 11, 3, 16, 14, 7, 24, 12, 4, 8, 25, 5, 26, 27, 0
-  };
-  if (x==0) return 32;
-  x |= x >> 1;
-  x |= x >> 2;
-  x |= x >> 4;
-  x |= x >> 8;
-  x |= x >> 16;
-  return debruijn[(uint32_t)(x * (uint32_t)(0x07C4ACDDU)) >> 27];
-}
-
-static inline size_t mi_ctz(size_t x) {
-  if (x==0) return MI_SIZE_BITS;
-  #if (MI_SIZE_BITS <= 32)
-    return mi_ctz_generic32((uint32_t)x);
-  #else
-    const uint32_t lo = (uint32_t)x;
-    if (lo != 0) {
-      return mi_ctz_generic32(lo);
-    }
-    else {
-      return (32 + mi_ctz_generic32((uint32_t)(x>>32)));
-    }
-  #endif
-}
-
-static inline size_t mi_clz(size_t x) {
-  if (x==0) return MI_SIZE_BITS;
-  #if (MI_SIZE_BITS <= 32)
-    return mi_clz_generic32((uint32_t)x);
-  #else
-    const uint32_t hi = (uint32_t)(x>>32);
-    if (hi != 0) {
-      return mi_clz_generic32(hi);
-    }
-    else {
-      return 32 + mi_clz_generic32((uint32_t)x);
-    }
-  #endif
-}
-
-#endif
 
 // "bit scan reverse": Return index of the highest bit (or MI_SIZE_BITS if `x` is zero)
 static inline size_t mi_bsr(size_t x) {
   return (x==0 ? MI_SIZE_BITS : MI_SIZE_BITS - 1 - mi_clz(x));
 }
 
-size_t _mi_popcount_generic(size_t x);
-
 static inline size_t mi_popcount(size_t x) {
-  if (x<=1) return x;
-  if (x==SIZE_MAX) return MI_SIZE_BITS;
-  #if defined(__GNUC__)
-    #if (SIZE_MAX == ULONG_MAX)
-      return __builtin_popcountl(x);
-    #else
-      return __builtin_popcountll(x);
-    #endif
-  #else
-    return _mi_popcount_generic(x);
-  #endif
+  return __builtin_popcountl(x);
 }
 
-// ---------------------------------------------------------------------------------
-// Provide our own `_mi_memcpy` for potential performance optimizations.
-//
-// For now, only on Windows with msvc/clang-cl we optimize to `rep movsb` if
-// we happen to run on x86/x64 cpu's that have "fast short rep movsb" (FSRM) support
-// (AMD Zen3+ (~2020) or Intel Ice Lake+ (~2017). See also issue #201 and pr #253.
-// ---------------------------------------------------------------------------------
-
-#if !MI_TRACK_ENABLED && defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
-#include <intrin.h>
-extern mi_decl_hidden bool _mi_cpu_has_fsrm;
-extern mi_decl_hidden bool _mi_cpu_has_erms;
-static inline void _mi_memcpy(void* dst, const void* src, size_t n) {
-  if ((_mi_cpu_has_fsrm && n <= 128) || (_mi_cpu_has_erms && n > 128)) {
-    __movsb((unsigned char*)dst, (const unsigned char*)src, n);
-  }
-  else {
-    memcpy(dst, src, n);
-  }
-}
-static inline void _mi_memzero(void* dst, size_t n) {
-  if ((_mi_cpu_has_fsrm && n <= 128) || (_mi_cpu_has_erms && n > 128)) {
-    __stosb((unsigned char*)dst, 0, n);
-  }
-  else {
-    memset(dst, 0, n);
-  }
-}
-#else
-static inline void _mi_memcpy(void* dst, const void* src, size_t n) {
-  memcpy(dst, src, n);
-}
 static inline void _mi_memzero(void* dst, size_t n) {
   memset(dst, 0, n);
 }
-#endif
 
 // -------------------------------------------------------------------------------
 // The `_mi_memcpy_aligned` can be used if the pointers are machine-word aligned
 // This is used for example in `mi_realloc`.
 // -------------------------------------------------------------------------------
 
-#if (defined(__GNUC__) && (__GNUC__ >= 4)) || defined(__clang__)
 // On GCC/CLang we provide a hint that the pointers are word aligned.
 static inline void _mi_memcpy_aligned(void* dst, const void* src, size_t n) {
   mi_assert_internal(((uintptr_t)dst % MI_INTPTR_SIZE == 0) && ((uintptr_t)src % MI_INTPTR_SIZE == 0));
   void* adst = __builtin_assume_aligned(dst, MI_INTPTR_SIZE);
   const void* asrc = __builtin_assume_aligned(src, MI_INTPTR_SIZE);
-  _mi_memcpy(adst, asrc, n);
+  memcpy(adst, asrc, n);
 }
 
 static inline void _mi_memzero_aligned(void* dst, size_t n) {
@@ -1136,18 +832,6 @@ static inline void _mi_memzero_aligned(void* dst, size_t n) {
   void* adst = __builtin_assume_aligned(dst, MI_INTPTR_SIZE);
   _mi_memzero(adst, n);
 }
-#else
-// Default fallback on `_mi_memcpy`
-static inline void _mi_memcpy_aligned(void* dst, const void* src, size_t n) {
-  mi_assert_internal(((uintptr_t)dst % MI_INTPTR_SIZE == 0) && ((uintptr_t)src % MI_INTPTR_SIZE == 0));
-  _mi_memcpy(dst, src, n);
-}
-
-static inline void _mi_memzero_aligned(void* dst, size_t n) {
-  mi_assert_internal((uintptr_t)dst % MI_INTPTR_SIZE == 0);
-  _mi_memzero(dst, n);
-}
-#endif
 
 
 #endif

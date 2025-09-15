@@ -13,7 +13,7 @@ threads and need to be accessed using atomic operations.
 
 Arenas are also used to for huge OS page (1GiB) reservations or for reserving
 OS memory upfront which can be improve performance or is sometimes needed
-on embedded devices. We can also employ this with WASI or `sbrk` systems
+on embedded devices. We can also employ this with `sbrk` systems
 to reserve large arenas upfront and be able to reuse the memory more effectively.
 
 The arena allocation needs to be thread safe and we use an atomic bitmap to allocate.

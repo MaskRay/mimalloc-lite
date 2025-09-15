@@ -36,10 +36,6 @@ static int ITER    = 400;
 static int THREADS = 8;
 static int SCALE   = 25;
 static int ITER    = 20;
-#elif defined(MI_GUARDED)     // with debug guard pages reduce parameters to stay within the azure pipeline limits
-static int THREADS = 8;
-static int SCALE   = 10;
-static int ITER    = 10;
 #else
 static int THREADS = 32;      // more repeatable if THREADS <= #processors
 static int SCALE   = 50;      // scaling factor
@@ -353,42 +349,6 @@ int main(int argc, char** argv) {
 
 static void (*thread_entry_fun)(intptr_t) = &stress;
 
-#ifdef _WIN32
-
-#include <windows.h>
-
-static DWORD WINAPI thread_entry(LPVOID param) {
-  thread_entry_fun((intptr_t)param);
-  return 0;
-}
-
-static void run_os_threads(size_t nthreads, void (*fun)(intptr_t)) {
-  thread_entry_fun = fun;
-  DWORD* tids = (DWORD*)custom_calloc(nthreads,sizeof(DWORD));
-  HANDLE* thandles = (HANDLE*)custom_calloc(nthreads,sizeof(HANDLE));
-  const size_t start = (main_participates ? 1 : 0);
-  for (size_t i = start; i < nthreads; i++) {
-    thandles[i] = CreateThread(0, 8*1024, &thread_entry, (void*)(i), 0, &tids[i]);
-  }
-  if (main_participates) fun(0); // run the main thread as well
-  for (size_t i = start; i < nthreads; i++) {
-    WaitForSingleObject(thandles[i], INFINITE);
-  }
-  for (size_t i = start; i < nthreads; i++) {
-    CloseHandle(thandles[i]);
-  }
-  custom_free(tids);
-  custom_free(thandles);
-}
-
-static void* atomic_exchange_ptr(volatile void** p, void* newval) {
-#if (INTPTR_MAX == INT32_MAX)
-  return (void*)InterlockedExchange((volatile LONG*)p, (LONG)newval);
-#else
-  return (void*)InterlockedExchange64((volatile LONG64*)p, (LONG64)newval);
-#endif
-}
-#else
 
 #include <pthread.h>
 
@@ -423,6 +383,4 @@ static void* atomic_exchange_ptr(volatile void** p, void* newval) {
 static void* atomic_exchange_ptr(volatile void** p, void* newval) {
   return atomic_exchange((volatile _Atomic(void*)*)p, newval);
 }
-#endif
-
 #endif

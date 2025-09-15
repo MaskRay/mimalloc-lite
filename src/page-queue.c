@@ -108,10 +108,10 @@ size_t _mi_bin_size(size_t bin) {
 // Good size for allocation
 size_t mi_good_size(size_t size) mi_attr_noexcept {
   if (size <= MI_MEDIUM_OBJ_SIZE_MAX) {
-    return _mi_bin_size(mi_bin(size + MI_PADDING_SIZE));
+    return _mi_bin_size(mi_bin(size));
   }
   else {
-    return _mi_align_up(size + MI_PADDING_SIZE,_mi_os_page_size());
+    return _mi_align_up(size, _mi_os_page_size());
   }
 }
 
@@ -159,7 +159,6 @@ static mi_page_queue_t* mi_heap_page_queue_of(mi_heap_t* heap, const mi_page_t* 
 static mi_page_queue_t* mi_page_queue_of(const mi_page_t* page) {
   mi_heap_t* heap = mi_page_heap(page);
   mi_page_queue_t* pq = mi_heap_page_queue_of(heap, page);
-  mi_assert_expensive(mi_page_queue_contains(pq, page));
   return pq;
 }
 
@@ -213,7 +212,6 @@ static bool mi_page_queue_is_empty(mi_page_queue_t* queue) {
 
 static void mi_page_queue_remove(mi_page_queue_t* queue, mi_page_t* page) {
   mi_assert_internal(page != NULL);
-  mi_assert_expensive(mi_page_queue_contains(queue, page));
   mi_assert_internal(mi_page_block_size(page) == queue->block_size ||
                       (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(queue)) ||
                         (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
@@ -275,8 +273,6 @@ static void mi_page_queue_move_to_front(mi_heap_t* heap, mi_page_queue_t* queue,
 
 static void mi_page_queue_enqueue_from_ex(mi_page_queue_t* to, mi_page_queue_t* from, bool enqueue_at_end, mi_page_t* page) {
   mi_assert_internal(page != NULL);
-  mi_assert_expensive(mi_page_queue_contains(from, page));
-  mi_assert_expensive(!mi_page_queue_contains(to, page));
   const size_t bsize = mi_page_block_size(page);
   MI_UNUSED(bsize);
   mi_assert_internal((bsize == to->block_size && bsize == from->block_size) ||

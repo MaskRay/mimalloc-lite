@@ -53,9 +53,9 @@ defined, undefined, or not accessible at all:
 #include <valgrind/valgrind.h>
 #include <valgrind/memcheck.h>
 
-#define mi_track_malloc_size(p,reqsize,size,zero) VALGRIND_MALLOCLIKE_BLOCK(p,size,MI_PADDING_SIZE /*red zone*/,zero)
-#define mi_track_free_size(p,_size)               VALGRIND_FREELIKE_BLOCK(p,MI_PADDING_SIZE /*red zone*/)
-#define mi_track_resize(p,oldsize,newsize)        VALGRIND_RESIZEINPLACE_BLOCK(p,oldsize,newsize,MI_PADDING_SIZE /*red zone*/)
+#define mi_track_malloc_size(p,reqsize,size,zero) VALGRIND_MALLOCLIKE_BLOCK(p,size,0 /*red zone*/,zero)
+#define mi_track_free_size(p,_size)               VALGRIND_FREELIKE_BLOCK(p,0 /*red zone*/)
+#define mi_track_resize(p,oldsize,newsize)        VALGRIND_RESIZEINPLACE_BLOCK(p,oldsize,newsize,0 /*red zone*/)
 #define mi_track_mem_defined(p,size)              VALGRIND_MAKE_MEM_DEFINED(p,size)
 #define mi_track_mem_undefined(p,size)            VALGRIND_MAKE_MEM_UNDEFINED(p,size)
 #define mi_track_mem_noaccess(p,size)             VALGRIND_MAKE_MEM_NOACCESS(p,size)
@@ -128,18 +128,10 @@ defined, undefined, or not accessible at all:
 #endif
 
 
-#if MI_PADDING
-#define mi_track_malloc(p,reqsize,zero) \
-  if ((p)!=NULL) { \
-    mi_assert_internal(mi_usable_size(p)==(reqsize)); \
-    mi_track_malloc_size(p,reqsize,reqsize,zero); \
-  }
-#else
 #define mi_track_malloc(p,reqsize,zero) \
   if ((p)!=NULL) { \
     mi_assert_internal(mi_usable_size(p)>=(reqsize)); \
     mi_track_malloc_size(p,reqsize,mi_usable_size(p),zero); \
   }
-#endif
 
 #endif

@@ -40,15 +40,6 @@ terms of the MIT license. A copy of the license can be found in the file
   #else
   #include <sys/mman.h>
   #endif
-#elif defined(__APPLE__)
-  #include <AvailabilityMacros.h>
-  #include <TargetConditionals.h>
-  #if !defined(TARGET_OS_OSX) || TARGET_OS_OSX   // see issue #879, used to be (!TARGET_IOS_IPHONE && !TARGET_IOS_SIMULATOR)
-  #include <mach/vm_statistics.h>    // VM_MAKE_TAG, VM_FLAGS_SUPERPAGE_SIZE_2MB, etc.
-  #endif
-  #if !defined(MAC_OS_X_VERSION_10_7)
-  #define MAC_OS_X_VERSION_10_7   1070
-  #endif
 #elif defined(__FreeBSD__) || defined(__DragonFly__)
   #include <sys/param.h>
   #if __FreeBSD_version >= 1200000
@@ -403,7 +394,7 @@ int _mi_prim_alloc(void* hint_addr, size_t size, size_t try_alignment, bool comm
 //---------------------------------------------
 
 static void unix_mprotect_hint(int err) {
-  #if defined(__linux__) && (MI_SECURE>=2) // guard page around every mimalloc page
+  #if defined(__linux__)
   if (err == ENOMEM) {
     _mi_warning_message("The next warning may be caused by a low memory map limit.\n"
                         "  On Linux this is controlled by the vm.max_map_count -- maybe increase it?\n"
@@ -431,23 +422,14 @@ int _mi_prim_commit(void* start, size_t size, bool* is_zero) {
 
 int _mi_prim_reuse(void* start, size_t size) {
   MI_UNUSED(start); MI_UNUSED(size);
-  #if defined(__APPLE__) && defined(MADV_FREE_REUSE)
-  return unix_madvise(start, size, MADV_FREE_REUSE);
-  #endif
   return 0;
 }
 
 int _mi_prim_decommit(void* start, size_t size, bool* needs_recommit) {
   int err = 0;
-  #if defined(__APPLE__) && defined(MADV_FREE_REUSABLE)
-    // decommit on macOS: use MADV_FREE_REUSABLE as it does immediate rss accounting (issue #1097)
-    err = unix_madvise(start, size, MADV_FREE_REUSABLE);
-    if (err) { err = unix_madvise(start, size, MADV_DONTNEED); }
-  #else
-    // decommit: use MADV_DONTNEED as it decreases rss immediately (unlike MADV_FREE)
-    err = unix_madvise(start, size, MADV_DONTNEED);
-  #endif  
-  #if !MI_DEBUG && MI_SECURE<=2
+  // decommit: use MADV_DONTNEED as it decreases rss immediately (unlike MADV_FREE)
+  err = unix_madvise(start, size, MADV_DONTNEED);
+  #if !MI_DEBUG
     *needs_recommit = false;
   #else
     *needs_recommit = true;
@@ -466,12 +448,7 @@ int _mi_prim_decommit(void* start, size_t size, bool* needs_recommit) {
 int _mi_prim_reset(void* start, size_t size) {
   int err = 0;
 
-  // on macOS can use MADV_FREE_REUSABLE (but we disable this for now as it seems slower)
-  #if 0 && defined(__APPLE__) && defined(MADV_FREE_REUSABLE) 
-  err = unix_madvise(start, size, MADV_FREE_REUSABLE);  
-  if (err==0) return 0;
-  // fall through
-  #endif
+  // (Apple-specific MADV_FREE_REUSABLE removed assuming __APPLE__ is 0)
 
   #if defined(MADV_FREE)
   // Otherwise, we try to use `MADV_FREE` as that is the fastest. A drawback though is that it
@@ -667,14 +644,11 @@ mi_msecs_t _mi_prim_clock_now(void) {
 // Process info
 //----------------------------------------------------------------
 
-#if defined(__unix__) || defined(__unix) || defined(unix) || defined(__APPLE__) || defined(__HAIKU__)
+#if defined(__unix__) || defined(__unix) || defined(unix) || defined(__HAIKU__)
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/resource.h>
 
-#if defined(__APPLE__)
-#include <mach/mach.h>
-#endif
 
 #if defined(__HAIKU__)
 #include <kernel/OS.h>
@@ -704,21 +678,6 @@ void _mi_prim_process_info(mi_process_info_t* pinfo)
     pinfo->peak_rss += mem.ram_size;
   }
   pinfo->page_faults = 0;
-#elif defined(__APPLE__)
-  pinfo->peak_rss = rusage.ru_maxrss;         // macos reports in bytes
-  #ifdef MACH_TASK_BASIC_INFO
-  struct mach_task_basic_info info;
-  mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
-  if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) == KERN_SUCCESS) {
-    pinfo->current_rss = (size_t)info.resident_size;
-  }
-  #else
-  struct task_basic_info info;
-  mach_msg_type_number_t infoCount = TASK_BASIC_INFO_COUNT;
-  if (task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t)&info, &infoCount) == KERN_SUCCESS) {
-    pinfo->current_rss = (size_t)info.resident_size;
-  }
-  #endif
 #else
   pinfo->peak_rss = rusage.ru_maxrss * 1024;  // Linux/BSD report in KiB
 #endif
@@ -727,10 +686,7 @@ void _mi_prim_process_info(mi_process_info_t* pinfo)
 
 #else
 
-#ifndef __wasi__
-// WebAssembly instances are not processes
 #pragma message("define a way to get process info")
-#endif
 
 void _mi_prim_process_info(mi_process_info_t* pinfo)
 {
@@ -757,17 +713,10 @@ void _mi_prim_out_stderr( const char* msg ) {
 #if !defined(MI_USE_ENVIRON) || (MI_USE_ENVIRON!=0)
 // On Posix systemsr use `environ` to access environment variables
 // even before the C runtime is initialized.
-#if defined(__APPLE__) && defined(__has_include) && __has_include(<crt_externs.h>)
-#include <crt_externs.h>
-static char** mi_get_environ(void) {
-  return (*_NSGetEnviron());
-}
-#else
 extern char** environ;
 static char** mi_get_environ(void) {
   return environ;
 }
-#endif
 bool _mi_prim_getenv(const char* name, char* result, size_t result_size) {
   if (name==NULL) return false;
   const size_t len = _mi_strlen(name);
@@ -812,27 +761,16 @@ bool _mi_prim_getenv(const char* name, char* result, size_t result_size) {
 // Random
 //----------------------------------------------------------------
 
-#if defined(__APPLE__) && defined(MAC_OS_X_VERSION_10_15) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_15)
-#include <CommonCrypto/CommonCryptoError.h>
-#include <CommonCrypto/CommonRandom.h>
-
-bool _mi_prim_random_buf(void* buf, size_t buf_len) {
-  // We prefer CCRandomGenerateBytes as it returns an error code while arc4random_buf
-  // may fail silently on macOS. See PR #390, and <https://opensource.apple.com/source/Libc/Libc-1439.40.11/gen/FreeBSD/arc4random.c.auto.html>
-  return (CCRandomGenerateBytes(buf, buf_len) == kCCSuccess);
-}
-
-#elif defined(__ANDROID__) || defined(__DragonFly__) || \
+#if defined(__ANDROID__) || defined(__DragonFly__) || \
       defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
-      defined(__sun) || \
-      (defined(__APPLE__) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7))
+      defined(__sun)
 
 bool _mi_prim_random_buf(void* buf, size_t buf_len) {
   arc4random_buf(buf, buf_len);
   return true;
 }
 
-#elif defined(__APPLE__) || defined(__linux__) || defined(__HAIKU__)   // also for old apple versions < 10.7 (issue #829)
+#elif defined(__linux__) || defined(__HAIKU__)
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -888,8 +826,6 @@ bool _mi_prim_random_buf(void* buf, size_t buf_len) {
 // Thread init/done
 //----------------------------------------------------------------
 
-#if defined(MI_USE_PTHREADS)
-
 // use pthread local storage keys to detect thread ending
 // (and used with MI_TLS_PTHREADS for the default heap)
 pthread_key_t _mi_heap_default_key = (pthread_key_t)(-1);
@@ -916,19 +852,3 @@ void _mi_prim_thread_associate_default_heap(mi_heap_t* heap) {
     pthread_setspecific(_mi_heap_default_key, heap);
   }
 }
-
-#else
-
-void _mi_prim_thread_init_auto_done(void) {
-  // nothing
-}
-
-void _mi_prim_thread_done_auto_done(void) {
-  // nothing
-}
-
-void _mi_prim_thread_associate_default_heap(mi_heap_t* heap) {
-  MI_UNUSED(heap);
-}
-
-#endif

@@ -28,9 +28,6 @@ const mi_page_t _mi_page_empty = {
   0,       // heap tag
   0,       // block_size
   NULL,    // page_start
-  #if (MI_PADDING || MI_ENCODE_FREELIST)
-  { 0, 0 },
-  #endif
   MI_ATOMIC_VAR_INIT(0), // xthread_free
   MI_ATOMIC_VAR_INIT(0), // xheap
   NULL, NULL
@@ -40,13 +37,7 @@ const mi_page_t _mi_page_empty = {
 #define MI_PAGE_EMPTY() ((mi_page_t*)&_mi_page_empty)
 
 #if (MI_SMALL_WSIZE_MAX==128)
-#if (MI_PADDING>0) && (MI_INTPTR_SIZE >= 8)
-#define MI_SMALL_PAGES_EMPTY  { MI_INIT128(MI_PAGE_EMPTY), MI_PAGE_EMPTY(), MI_PAGE_EMPTY() }
-#elif (MI_PADDING>0)
-#define MI_SMALL_PAGES_EMPTY  { MI_INIT128(MI_PAGE_EMPTY), MI_PAGE_EMPTY(), MI_PAGE_EMPTY(), MI_PAGE_EMPTY() }
-#else
 #define MI_SMALL_PAGES_EMPTY  { MI_INIT128(MI_PAGE_EMPTY), MI_PAGE_EMPTY() }
-#endif
 #else
 #error "define right initialization sizes corresponding to MI_SMALL_WSIZE_MAX"
 #endif
@@ -171,9 +162,6 @@ mi_decl_cache_align mi_heap_t _mi_heap_main = {
   NULL,             // next heap
   false,            // can reclaim
   0,                // tag
-  #if MI_GUARDED
-  0, 0, 0, 0,
-  #endif
   MI_SMALL_PAGES_EMPTY,
   MI_PAGE_QUEUES_EMPTY
 };
@@ -182,54 +170,15 @@ bool _mi_process_is_initialized = false;  // set to `true` in `mi_process_init`.
 
 mi_stats_t _mi_stats_main = { MI_STAT_VERSION, MI_STATS_NULL };
 
-#if MI_GUARDED
-mi_decl_export void mi_heap_guarded_set_sample_rate(mi_heap_t* heap, size_t sample_rate, size_t seed) {
-  heap->guarded_sample_rate  = sample_rate;
-  heap->guarded_sample_count = sample_rate;  // count down samples
-  if (heap->guarded_sample_rate > 1) {
-    if (seed == 0) {
-      seed = _mi_heap_random_next(heap);
-    }
-    heap->guarded_sample_count = (seed % heap->guarded_sample_rate) + 1;  // start at random count between 1 and `sample_rate`
-  }
-}
-
-mi_decl_export void mi_heap_guarded_set_size_bound(mi_heap_t* heap, size_t min, size_t max) {
-  heap->guarded_size_min = min;
-  heap->guarded_size_max = (min > max ? min : max);
-}
-
-void _mi_heap_guarded_init(mi_heap_t* heap) {
-  mi_heap_guarded_set_sample_rate(heap,
-    (size_t)mi_option_get_clamp(mi_option_guarded_sample_rate, 0, LONG_MAX),
-    (size_t)mi_option_get(mi_option_guarded_sample_seed));
-  mi_heap_guarded_set_size_bound(heap,
-    (size_t)mi_option_get_clamp(mi_option_guarded_min, 0, LONG_MAX),
-    (size_t)mi_option_get_clamp(mi_option_guarded_max, 0, LONG_MAX) );
-}
-#else
-mi_decl_export void mi_heap_guarded_set_sample_rate(mi_heap_t* heap, size_t sample_rate, size_t seed) {
-  MI_UNUSED(heap); MI_UNUSED(sample_rate); MI_UNUSED(seed);
-}
-
-mi_decl_export void mi_heap_guarded_set_size_bound(mi_heap_t* heap, size_t min, size_t max) {
-  MI_UNUSED(heap); MI_UNUSED(min); MI_UNUSED(max);
-}
 void _mi_heap_guarded_init(mi_heap_t* heap) {
   MI_UNUSED(heap);
 }
-#endif
-
 
 static void mi_heap_main_init(void) {
   if (_mi_heap_main.cookie == 0) {
     _mi_heap_main.thread_id = _mi_thread_id();
     _mi_heap_main.cookie = 1;
-    #if defined(_WIN32) && !defined(MI_SHARED_LIB)
-      _mi_random_init_weak(&_mi_heap_main.random);    // prevent allocation failure during bcrypt dll initialization with static linking
-    #else
-      _mi_random_init(&_mi_heap_main.random);
-    #endif
+    _mi_random_init(&_mi_heap_main.random);
     _mi_heap_main.cookie  = _mi_heap_random_next(&_mi_heap_main);
     _mi_heap_main.keys[0] = _mi_heap_random_next(&_mi_heap_main);
     _mi_heap_main.keys[1] = _mi_heap_random_next(&_mi_heap_main);
@@ -542,15 +491,7 @@ void _mi_thread_done(mi_heap_t* heap)
 
 void _mi_heap_set_default_direct(mi_heap_t* heap)  {
   mi_assert_internal(heap != NULL);
-  #if defined(MI_TLS_SLOT)
-  mi_prim_tls_slot_set(MI_TLS_SLOT,heap);
-  #elif defined(MI_TLS_PTHREAD_SLOT_OFS)
-  *mi_prim_tls_pthread_heap_slot() = heap;
-  #elif defined(MI_TLS_PTHREAD)
-  // we use _mi_heap_default_key
-  #else
   _mi_heap_default = heap;
-  #endif
 
   // ensure the default heap is passed to `_mi_thread_done`
   // setting to a non-NULL value also ensures `mi_thread_done` is called.
@@ -572,17 +513,13 @@ bool mi_decl_noinline _mi_preloading(void) {
 }
 
 // Returns true if mimalloc was redirected
-mi_decl_nodiscard bool mi_is_redirected(void) mi_attr_noexcept {
+bool mi_is_redirected(void) mi_attr_noexcept {
   return _mi_is_redirected();
 }
 
 // Called once by the process loader from `src/prim/prim.c`
 void _mi_auto_process_init(void) {
   mi_heap_main_init();
-  #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
-  volatile mi_heap_t* dummy = _mi_heap_default; // access TLS to allocate it before setting tls_initialized to true;
-  if (dummy == NULL) return;                    // use dummy or otherwise the access may get optimized away (issue #697)
-  #endif
   os_preloading = false;
   mi_assert_internal(_mi_is_main_thread());
   _mi_options_init();
@@ -601,24 +538,9 @@ void _mi_auto_process_init(void) {
   _mi_random_reinit_if_weak(&_mi_heap_main.random);
 }
 
-#if defined(_WIN32) && (defined(_M_IX86) || defined(_M_X64))
-#include <intrin.h>
-mi_decl_cache_align bool _mi_cpu_has_fsrm = false;
-mi_decl_cache_align bool _mi_cpu_has_erms = false;
-
-static void mi_detect_cpu_features(void) {
-  // FSRM for fast short rep movsb/stosb support (AMD Zen3+ (~2020) or Intel Ice Lake+ (~2017))
-  // EMRS for fast enhanced rep movsb/stosb support
-  int32_t cpu_info[4];
-  __cpuid(cpu_info, 7);
-  _mi_cpu_has_fsrm = ((cpu_info[3] & (1 << 4)) != 0); // bit 4 of EDX : see <https://en.wikipedia.org/wiki/CPUID#EAX=7,_ECX=0:_Extended_Features>
-  _mi_cpu_has_erms = ((cpu_info[1] & (1 << 9)) != 0); // bit 9 of EBX : see <https://en.wikipedia.org/wiki/CPUID#EAX=7,_ECX=0:_Extended_Features>
-}
-#else
 static void mi_detect_cpu_features(void) {
   // nothing
 }
-#endif
 
 // Initialize the process; called by thread_init or the process loader
 void mi_process_init(void) mi_attr_noexcept {
@@ -637,12 +559,6 @@ void mi_process_init(void) mi_attr_noexcept {
   mi_heap_main_init();
   mi_thread_init();
 
-  #if defined(_WIN32)
-  // On windows, when building as a static lib the FLS cleanup happens to early for the main thread.
-  // To avoid this, set the FLS value for the main thread to NULL so the fls cleanup
-  // will not call _mi_thread_done on the (still executing) main thread. See issue #508.
-  _mi_prim_thread_associate_default_heap(NULL);
-  #endif
 
   mi_stats_reset();  // only call stat reset *after* thread init (or the heap tld == NULL)
   mi_track_init();
@@ -665,7 +581,7 @@ void mi_process_init(void) mi_attr_noexcept {
 }
 
 // Called when the process is done (cdecl as it is used with `at_exit` on some platforms)
-void mi_cdecl mi_process_done(void) mi_attr_noexcept {
+void mi_process_done(void) mi_attr_noexcept {
   // only shutdown if we were initialized
   if (!_mi_process_is_initialized) return;
   // ensure we are called once
@@ -708,7 +624,7 @@ void mi_cdecl mi_process_done(void) mi_attr_noexcept {
   os_preloading = true; // don't call the C runtime anymore
 }
 
-void mi_cdecl _mi_auto_process_done(void) mi_attr_noexcept {
+void _mi_auto_process_done(void) mi_attr_noexcept {
   if (_mi_option_get_fast(mi_option_destroy_on_exit)>1) return;
   mi_process_done();
 }

@@ -285,7 +285,7 @@ static void mi_buffered_flush(buffered_t* buf) {
   buf->used = 0;
 }
 
-static void mi_cdecl mi_buffered_out(const char* msg, void* arg) {
+static void mi_buffered_out(const char* msg, void* arg) {
   buffered_t* buf = (buffered_t*)arg;
   if (msg==NULL || buf==NULL) return;
   for (const char* src = msg; *src != 0; src++) {
@@ -482,7 +482,7 @@ void mi_stats_get(size_t stats_size, mi_stats_t* stats) mi_attr_noexcept {
   if (stats == NULL || stats_size == 0) return;
   _mi_memzero(stats, stats_size);
   const size_t size = (stats_size > sizeof(mi_stats_t) ? sizeof(mi_stats_t) : stats_size);
-  _mi_memcpy(stats, &_mi_stats_main, size);
+  memcpy(stats, &_mi_stats_main, size);
   stats->version = MI_STAT_VERSION;
 }
 

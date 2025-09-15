@@ -95,11 +95,7 @@ typedef struct mi_option_desc_s {
 #endif
 
 #ifndef MI_DEFAULT_GUARDED_SAMPLE_RATE
-#if MI_GUARDED
-#define MI_DEFAULT_GUARDED_SAMPLE_RATE 4000
-#else
 #define MI_DEFAULT_GUARDED_SAMPLE_RATE 0
-#endif
 #endif
 
 
@@ -180,14 +176,6 @@ void _mi_options_init(void) {
   }
   mi_max_error_count = mi_option_get(mi_option_max_errors);
   mi_max_warning_count = mi_option_get(mi_option_max_warnings);
-  #if MI_GUARDED
-  if (mi_option_get(mi_option_guarded_sample_rate) > 0) {
-    if (mi_option_is_enabled(mi_option_allow_large_os_pages)) {
-      mi_option_disable(mi_option_allow_large_os_pages);
-      _mi_warning_message("option 'allow_large_os_pages' is disabled to allow for guarded objects\n");
-    }
-  }
-  #endif
   if (mi_option_is_enabled(mi_option_verbose)) { mi_options_print(); }
 }
 
@@ -224,11 +212,7 @@ void mi_options_print(void) mi_attr_noexcept
 
   // show build configuration
   _mi_message("debug level : %d\n", MI_DEBUG );
-  _mi_message("secure level: %d\n", MI_SECURE );
   _mi_message("mem tracking: %s\n", MI_TRACK_TOOL);
-  #if MI_GUARDED
-  _mi_message("guarded build: %s\n", mi_option_get(mi_option_guarded_sample_rate) != 0 ? "enabled" : "disabled");
-  #endif
   #if MI_TSAN
   _mi_message("thread santizer enabled\n");
   #endif
@@ -243,7 +227,7 @@ long _mi_option_get_fast(mi_option_t option) {
 }
 
 
-mi_decl_nodiscard long mi_option_get(mi_option_t option) {
+long mi_option_get(mi_option_t option) {
   mi_assert(option >= 0 && option < _mi_option_last);
   if (option < 0 || option >= _mi_option_last) return 0;
   mi_option_desc_t* desc = &options[option];
@@ -254,12 +238,12 @@ mi_decl_nodiscard long mi_option_get(mi_option_t option) {
   return desc->value;
 }
 
-mi_decl_nodiscard long mi_option_get_clamp(mi_option_t option, long min, long max) {
+long mi_option_get_clamp(mi_option_t option, long min, long max) {
   long x = mi_option_get(option);
   return (x < min ? min : (x > max ? max : x));
 }
 
-mi_decl_nodiscard size_t mi_option_get_size(mi_option_t option) {
+size_t mi_option_get_size(mi_option_t option) {
   const long x = mi_option_get(option);
   size_t size = (x < 0 ? 0 : (size_t)x);
   if (mi_option_has_size_in_kib(option)) {
@@ -293,7 +277,7 @@ void mi_option_set_default(mi_option_t option, long value) {
   }
 }
 
-mi_decl_nodiscard bool mi_option_is_enabled(mi_option_t option) {
+bool mi_option_is_enabled(mi_option_t option) {
   return (mi_option_get(option) != 0);
 }
 
@@ -313,7 +297,7 @@ void mi_option_disable(mi_option_t option) {
   mi_option_set_enabled(option,false);
 }
 
-static void mi_cdecl mi_out_stderr(const char* msg, void* arg) {
+static void mi_out_stderr(const char* msg, void* arg) {
   MI_UNUSED(arg);
   if (msg != NULL && msg[0] != 0) {
     _mi_prim_out_stderr(msg);
@@ -330,7 +314,7 @@ static void mi_cdecl mi_out_stderr(const char* msg, void* arg) {
 static char out_buf[MI_MAX_DELAY_OUTPUT+1];
 static _Atomic(size_t) out_len;
 
-static void mi_cdecl mi_out_buf(const char* msg, void* arg) {
+static void mi_out_buf(const char* msg, void* arg) {
   MI_UNUSED(arg);
   if (msg==NULL) return;
   if (mi_atomic_load_relaxed(&out_len)>=MI_MAX_DELAY_OUTPUT) return;
@@ -343,7 +327,7 @@ static void mi_cdecl mi_out_buf(const char* msg, void* arg) {
   if (start+n >= MI_MAX_DELAY_OUTPUT) {
     n = MI_MAX_DELAY_OUTPUT-start-1;
   }
-  _mi_memcpy(&out_buf[start], msg, n);
+  memcpy(&out_buf[start], msg, n);
 }
 
 static void mi_out_buf_flush(mi_output_fun* out, bool no_more_buf, void* arg) {
@@ -362,7 +346,7 @@ static void mi_out_buf_flush(mi_output_fun* out, bool no_more_buf, void* arg) {
 
 // Once this module is loaded, switch to this routine
 // which outputs to stderr and the delayed output buffer.
-static void mi_cdecl mi_out_buf_stderr(const char* msg, void* arg) {
+static void mi_out_buf_stderr(const char* msg, void* arg) {
   mi_out_stderr(msg,arg);
   mi_out_buf(msg,arg);
 }
@@ -545,11 +529,6 @@ static void mi_error_default(int err) {
     #ifdef _MSC_VER
     __debugbreak();
     #endif
-    abort();
-  }
-#endif
-#if (MI_SECURE>0)
-  if (err==EFAULT) {  // abort on serious errors in secure mode (corrupted meta-data)
     abort();
   }
 #endif

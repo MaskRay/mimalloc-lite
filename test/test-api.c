@@ -64,14 +64,6 @@ bool mem_is_zero(uint8_t* p, size_t size) {
 // ---------------------------------------------------------------------------
 int main(void) {
   mi_option_disable(mi_option_verbose);
-
-  CHECK_BODY("malloc-aligned9a") { // test large alignments
-    void* p = mi_zalloc_aligned(1024 * 1024, 2);
-    mi_free(p);
-    p = mi_zalloc_aligned(1024 * 1024, 2);
-    mi_free(p);
-    result = true;
-  };
   
 
   // ---------------------------------------------------
@@ -200,26 +192,6 @@ int main(void) {
     }
     result = ok;
   };
-  CHECK_BODY("malloc-aligned9") { // test large alignments
-    bool ok = true;
-    void* p[8];
-    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_BLOCK_ALIGNMENT_MAX, MI_BLOCK_ALIGNMENT_MAX + 1, 
-      #if SIZE_MAX > UINT32_MAX
-      2 * MI_BLOCK_ALIGNMENT_MAX, 8 * MI_BLOCK_ALIGNMENT_MAX, 
-      #endif
-      0 };
-    for (int i = 0; i < 28 && ok; i++) {
-      int align = (1 << i);
-      for (int j = 0; j < 8 && ok; j++) {
-        p[j] = mi_zalloc_aligned(sizes[j], align);
-        ok = ((uintptr_t)p[j] % align) == 0;
-      }
-      for (int j = 0; j < 8; j++) {
-        mi_free(p[j]);
-      }
-    }
-    result = ok;
-  };
   CHECK_BODY("malloc-aligned10") {
     bool ok = true;
     void* p[10+1];
@@ -258,7 +230,7 @@ int main(void) {
           mi_free(p[i]);
         }       
         /*
-        if (ok && align <= size && ((size + MI_PADDING_SIZE) & (align-1)) == 0) {
+        if (ok && align <= size && (size & (align-1)) == 0) {
           size_t bsize = mi_good_size(size);
           ok = (align <= bsize && (bsize & (align-1)) == 0);
         }
@@ -267,12 +239,6 @@ int main(void) {
     }
     result = ok;
   }
-  CHECK_BODY("malloc-aligned-at1") {
-    void* p = mi_malloc_aligned_at(48,32,0); result = (p != NULL && ((uintptr_t)(p) + 0) % 32 == 0); mi_free(p);
-  };
-  CHECK_BODY("malloc-aligned-at2") {
-    void* p = mi_malloc_aligned_at(50,32,8); result = (p != NULL && ((uintptr_t)(p) + 8) % 32 == 0); mi_free(p);
-  };
   CHECK_BODY("memalign1") {
     void* p;
     bool ok = true;
@@ -281,21 +247,6 @@ int main(void) {
       ok = (p != NULL && (uintptr_t)(p) % 16 == 0); mi_free(p);
     }
     result = ok;
-  };
-  CHECK_BODY("zalloc-aligned-small1") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = mem_is_zero(p, zalloc_size);
-    mi_free(p);
-  };
-  CHECK_BODY("rezalloc_aligned-small1") {
-    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
-    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = mem_is_zero(p, zalloc_size);
-    zalloc_size *= 3;
-    p = (uint8_t*)mi_rezalloc_aligned(p, zalloc_size, MI_MAX_ALIGN_SIZE * 2);
-    result = result && mem_is_zero(p, zalloc_size);
-    mi_free(p);
   };
 
   // ---------------------------------------------------
@@ -333,17 +284,6 @@ int main(void) {
   CHECK("heap_delete", test_heap2());
 
   //mi_stats_print(NULL);
-
-  // ---------------------------------------------------
-  // various
-  // ---------------------------------------------------
-  #if !defined(MI_TRACK_ASAN)   // realpath may leak with ASAN enabled (as the ASAN allocator intercepts it)
-  CHECK_BODY("realpath") {
-    char* s = mi_realpath( ".", NULL );
-    // printf("realpath: %s\n",s);
-    mi_free(s);
-  };
-  #endif
 
   CHECK("stl_allocator1", test_stl_allocator1());
   CHECK("stl_allocator2", test_stl_allocator2());

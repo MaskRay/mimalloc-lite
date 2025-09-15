@@ -60,18 +60,9 @@ static bool mi_heap_page_is_valid(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_
   mi_assert_internal(mi_page_heap(page) == heap);
   mi_segment_t* segment = _mi_page_segment(page);
   mi_assert_internal(mi_atomic_load_relaxed(&segment->thread_id) == heap->thread_id);
-  mi_assert_expensive(_mi_page_is_valid(page));
   return true;
 }
 #endif
-#if MI_DEBUG>=3
-static bool mi_heap_is_valid(mi_heap_t* heap) {
-  mi_assert_internal(heap!=NULL);
-  mi_heap_visit_pages(heap, &mi_heap_page_is_valid, NULL, NULL);
-  return true;
-}
-#endif
-
 
 
 
@@ -126,7 +117,6 @@ static void mi_heap_collect_ex(mi_heap_t* heap, mi_collect_t collect)
   if (heap==NULL || !mi_heap_is_initialized(heap)) return;
 
   const bool force = (collect >= MI_FORCE);
-  _mi_deferred_free(heap, force);
 
   // python/cpython#112532: we may be called from a thread that is not the owner of the heap
   const bool is_main_thread = (_mi_is_main_thread() && heap->thread_id == _mi_thread_id());
@@ -183,11 +173,11 @@ void _mi_heap_collect_abandon(mi_heap_t* heap) {
   mi_heap_collect_ex(heap, MI_ABANDON);
 }
 
-void mi_heap_collect(mi_heap_t* heap, bool force) mi_attr_noexcept {
+void mi_heap_collect(mi_heap_t* heap, bool force) {
   mi_heap_collect_ex(heap, (force ? MI_FORCE : MI_NORMAL));
 }
 
-void mi_collect(bool force) mi_attr_noexcept {
+void mi_collect(bool force) {
   mi_heap_collect(mi_prim_get_default_heap(), force);
 }
 
@@ -237,7 +227,7 @@ void _mi_heap_init(mi_heap_t* heap, mi_tld_t* tld, mi_arena_id_t arena_id, bool 
   heap->tld->heaps = heap;
 }
 
-mi_decl_nodiscard mi_heap_t* mi_heap_new_ex(int heap_tag, bool allow_destroy, mi_arena_id_t arena_id) {
+mi_heap_t* mi_heap_new_ex(int heap_tag, bool allow_destroy, mi_arena_id_t arena_id) {
   mi_heap_t* bheap = mi_heap_get_backing();
   mi_heap_t* heap = mi_heap_malloc_tp(bheap, mi_heap_t);  // todo: OS allocate in secure mode?
   if (heap == NULL) return NULL;
@@ -246,11 +236,11 @@ mi_decl_nodiscard mi_heap_t* mi_heap_new_ex(int heap_tag, bool allow_destroy, mi
   return heap;
 }
 
-mi_decl_nodiscard mi_heap_t* mi_heap_new_in_arena(mi_arena_id_t arena_id) {
+mi_heap_t* mi_heap_new_in_arena(mi_arena_id_t arena_id) {
   return mi_heap_new_ex(0 /* default heap tag */, false /* don't allow `mi_heap_destroy` */, arena_id);
 }
 
-mi_decl_nodiscard mi_heap_t* mi_heap_new(void) {
+mi_heap_t* mi_heap_new(void) {
   // don't reclaim abandoned memory or otherwise destroy is unsafe
   return mi_heap_new_ex(0 /* default heap tag */, true /* no reclaim */, _mi_arena_id_none());
 }
@@ -372,40 +362,21 @@ void _mi_heap_destroy_pages(mi_heap_t* heap) {
   mi_heap_reset_pages(heap);
 }
 
-#if MI_TRACK_HEAP_DESTROY
-static bool mi_cdecl mi_heap_track_block_free(const mi_heap_t* heap, const mi_heap_area_t* area, void* block, size_t block_size, void* arg) {
-  MI_UNUSED(heap); MI_UNUSED(area);  MI_UNUSED(arg); MI_UNUSED(block_size);
-  mi_track_free_size(block,mi_usable_size(block));
-  return true;
-}
-#endif
-
 void mi_heap_destroy(mi_heap_t* heap) {
   mi_assert(heap != NULL);
   mi_assert(mi_heap_is_initialized(heap));
   mi_assert(heap->no_reclaim);
-  mi_assert_expensive(mi_heap_is_valid(heap));
   if (heap==NULL || !mi_heap_is_initialized(heap)) return;
-  #if MI_GUARDED
-  // _mi_warning_message("'mi_heap_destroy' called but MI_GUARDED is enabled -- using `mi_heap_delete` instead (heap at %p)\n", heap);
-  mi_heap_delete(heap);
-  return;
-  #else
   if (!heap->no_reclaim) {
     _mi_warning_message("'mi_heap_destroy' called but ignored as the heap was not created with 'allow_destroy' (heap at %p)\n", heap);
     // don't free in case it may contain reclaimed pages
     mi_heap_delete(heap);
   }
   else {
-    // track all blocks as freed
-    #if MI_TRACK_HEAP_DESTROY
-    mi_heap_visit_blocks(heap, true, mi_heap_track_block_free, NULL);
-    #endif
     // free all pages
     _mi_heap_destroy_pages(heap);
     mi_heap_free(heap);
   }
-  #endif
 }
 
 // forcefully destroy all heaps in the current thread
@@ -474,7 +445,6 @@ void mi_heap_delete(mi_heap_t* heap)
 {
   mi_assert(heap != NULL);
   mi_assert(mi_heap_is_initialized(heap));
-  mi_assert_expensive(mi_heap_is_valid(heap));
   if (heap==NULL || !mi_heap_is_initialized(heap)) return;
 
   mi_heap_t* bheap = heap->tld->heap_backing;
@@ -494,7 +464,6 @@ mi_heap_t* mi_heap_set_default(mi_heap_t* heap) {
   mi_assert(heap != NULL);
   mi_assert(mi_heap_is_initialized(heap));
   if (heap==NULL || !mi_heap_is_initialized(heap)) return NULL;
-  mi_assert_expensive(mi_heap_is_valid(heap));
   mi_heap_t* old = mi_prim_get_default_heap();
   _mi_heap_set_default_direct(heap);
   return old;

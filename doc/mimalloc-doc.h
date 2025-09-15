@@ -107,12 +107,6 @@ void  mi_free(void* p);
 /// Returns a unique pointer if called with \a size 0.
 void* mi_malloc(size_t size);
 
-/// Allocate zero-initialized `size` bytes.
-/// @param size The size in bytes.
-/// @returns Pointer to newly allocated zero initialized memory,
-/// or \a NULL if out of memory.
-void* mi_zalloc(size_t size);
-
 /// Allocate zero-initialized \a count elements of \a size bytes.
 /// @param count number of elements.
 /// @param size  size of each element.
@@ -138,18 +132,6 @@ void* mi_calloc(size_t count, size_t size);
 /// are uninitialized.
 void* mi_realloc(void* p, size_t newsize);
 
-/// Re-allocate memory to \a count elements of \a size bytes, with extra memory initialized to zero.
-/// @param p Pointer to a previously allocated block (or \a NULL).
-/// @param count The number of elements.
-/// @param size The size of each element.
-/// @returns A pointer to a re-allocated block of \a count * \a size bytes, or \a NULL
-/// if out of memory or if \a count * \a size overflows.
-///
-/// If there is no overflow, it behaves exactly like `mi_rezalloc(p,count*size)`.
-/// @see mi_reallocn()
-/// @see [recallocarray()](http://man.openbsd.org/reallocarray) (on BSD).
-void* mi_recalloc(void* p, size_t count, size_t size);
-
 /// Try to re-allocate memory to \a newsize bytes _in place_.
 /// @param p  pointer to previously allocated memory (or \a NULL).
 /// @param newsize  the new required size in bytes.
@@ -164,17 +146,6 @@ void* mi_recalloc(void* p, size_t count, size_t size);
 /// original \a size allocated for \a p, the bytes after \a size
 /// are uninitialized.
 void* mi_expand(void* p, size_t newsize);
-
-/// Allocate \a count elements of \a size bytes.
-/// @param count The number of elements.
-/// @param size The size of each element.
-/// @returns A pointer to a block of \a count * \a size bytes, or \a NULL
-/// if out of memory or if \a count * \a size overflows.
-///
-/// If there is no overflow, it behaves exactly like `mi_malloc(count*size)`.
-/// @see mi_calloc()
-/// @see mi_zallocn()
-void* mi_mallocn(size_t count, size_t size);
 
 /// Re-allocate memory to \a count elements of \a size bytes.
 /// @param p Pointer to a previously allocated block (or \a NULL).
@@ -609,22 +580,6 @@ void* mi_zalloc_aligned(size_t size, size_t alignment);
 void* mi_calloc_aligned(size_t count, size_t size, size_t alignment);
 void* mi_realloc_aligned(void* p, size_t newsize, size_t alignment);
 
-/// Allocate \a size bytes aligned by \a alignment at a specified \a offset.
-/// @param size  number of bytes to allocate.
-/// @param alignment  the minimal alignment of the allocated memory at \a offset.
-/// @param offset     the offset that should be aligned.
-/// @returns pointer to the allocated memory or \a NULL if out of memory,
-/// or if the alignment is not a power of 2 (including 0). The \a size is unrestricted
-/// (and does not have to be an integral multiple of the \a alignment).
-/// The returned pointer is aligned by \a alignment, i.e. `(uintptr_t)p % alignment == 0`.
-/// Returns a unique pointer if called with \a size 0.
-///
-/// @see [_aligned_offset_malloc](https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/aligned-offset-malloc?view=vs-2017) (on Windows)
-void* mi_malloc_aligned_at(size_t size, size_t alignment, size_t offset);
-void* mi_zalloc_aligned_at(size_t size, size_t alignment, size_t offset);
-void* mi_calloc_aligned_at(size_t count, size_t size, size_t alignment, size_t offset);
-void* mi_realloc_aligned_at(void* p, size_t newsize, size_t alignment, size_t offset);
-
 /// \}
 
 /// \defgroup heap Heap Allocation
@@ -970,11 +925,6 @@ void  mi_option_set_default(mi_option_t option, long value);
 ///
 /// \{
 
-/// Just as `free` but also checks if the pointer `p` belongs to our heap.
-void   mi_cfree(void* p);
-void* mi__expand(void* p, size_t newsize);
-
-void*  mi_recalloc(void* p, size_t count, size_t size);
 size_t mi_malloc_size(const void* p);
 size_t mi_malloc_good_size(size_t size);
 size_t mi_malloc_usable_size(const void *p);
@@ -982,8 +932,6 @@ size_t mi_malloc_usable_size(const void *p);
 int mi_posix_memalign(void** p, size_t alignment, size_t size);
 int mi__posix_memalign(void** p, size_t alignment, size_t size);
 void* mi_memalign(size_t alignment, size_t size);
-void* mi_valloc(size_t size);
-void* mi_pvalloc(size_t size);
 void* mi_aligned_alloc(size_t alignment, size_t size);
 
 unsigned short* mi_wcsdup(const unsigned short* s);
@@ -1006,40 +954,6 @@ void mi_free_size_aligned(void* p, size_t size, size_t alignment);
 void mi_free_aligned(void* p, size_t alignment);
 
 /// \}
-
-/// \defgroup cpp C++ wrappers
-///
-///  `mi_` prefixed implementations of various allocation functions
-///  that use C++ semantics on out-of-memory, generally calling
-///  `std::get_new_handler` and raising a `std::bad_alloc` exception on failure.
-///
-///  Note: use the `mimalloc-new-delete.h` header to override the \a new
-///        and \a delete operators globally. The wrappers here are mostly
-///        for convenience for library writers that need to interface with
-///        mimalloc from C++.
-///
-/// \{
-
-/// like mi_malloc(), but when out of memory, use `std::get_new_handler` and raise `std::bad_alloc` exception on failure.
-void* mi_new(std::size_t n) noexcept(false);
-
-/// like mi_mallocn(), but when out of memory, use `std::get_new_handler` and raise `std::bad_alloc` exception on failure.
-void* mi_new_n(size_t count, size_t size) noexcept(false);
-
-/// like mi_malloc_aligned(), but when out of memory, use `std::get_new_handler` and raise `std::bad_alloc` exception on failure.
-void* mi_new_aligned(std::size_t n, std::align_val_t alignment) noexcept(false);
-
-/// like `mi_malloc`, but when out of memory, use `std::get_new_handler` but return \a NULL on failure.
-void* mi_new_nothrow(size_t n);
-
-/// like `mi_malloc_aligned`, but when out of memory, use `std::get_new_handler` but return \a NULL on failure.
-void* mi_new_aligned_nothrow(size_t n, size_t alignment);
-
-/// like mi_realloc(), but when out of memory, use `std::get_new_handler` and raise `std::bad_alloc` exception on failure.
-void* mi_new_realloc(void* p, size_t newsize);
-
-/// like mi_reallocn(), but when out of memory, use `std::get_new_handler` and raise `std::bad_alloc` exception on failure.
-void* mi_new_reallocn(void* p, size_t newcount, size_t size);
 
 /// \a std::allocator implementation for mimalloc for use in STL containers.
 /// For example:
@@ -1400,20 +1314,16 @@ int    posix_memalign(void** p, size_t alignment, size_t size);
 
 // Linux
 void*  memalign(size_t alignment, size_t size);
-void*  valloc(size_t size);
-void*  pvalloc(size_t size);
 size_t malloc_usable_size(void *p);
 void*  reallocf(void* p, size_t newsize);
 
 // macOS
-void   vfree(void* p);
 size_t malloc_size(const void* p);
 size_t malloc_good_size(size_t size);
 
 // BSD
 void*  reallocarray( void* p, size_t count, size_t size );
 void*  reallocf(void* p, size_t newsize);
-void   cfree(void* p);
 
 // NetBSD
 int    reallocarr(void* p, size_t count, size_t size);
